@@ -1,17 +1,24 @@
-function xy=llh2local(llh,origin)
-%llh2local     xy=llh2local(llh,origin)
+function xy = llh2local(llh, origin)
+% LLH2LOCAL Converts from longitude and latitude to local coordinates.
+%   xy = llh2local(llh, origin)
 %
-%Converts from longitude and latitude to local coorindates
-%given an origin.  llh (lon; lat; height) and origin should
-%be in decimal degrees. Note that heights are ignored and
-%that xy is in km.
+%   Converts from longitude and latitude to local coordinates given an origin. 
+%   'llh' (lon; lat; height) and 'origin' should be in decimal degrees. Note that 
+%   heights are ignored, and xy is in km.
+%
+%   Inputs:
+%   - llh: A 3xN matrix of [lon; lat; height] in decimal degrees.
+%   - origin: A 1x2 vector [lon, lat] of the origin in decimal degrees.
+%
+%   Output:
+%   - xy: A 2xN matrix of local coordinates [x; y] in kilometers.
 
 %-------------------------------------------------------------
 %   Record of revisions:
 %
 %   Date          Programmer            Description of Change
 %   ====          ==========            =====================
-%
+% 
 %   Sept 7, 2000  Peter Cervelli		Original Code
 %   Oct 20, 2000  Jessica Murray        Changed name from DM_llh2local to 
 %                                       llh2local for use with non-DM functions;
@@ -19,47 +26,52 @@ function xy=llh2local(llh,origin)
 %                                       of 'llh' (i.e., lon, lat, height).
 %   Dec. 6, 2000  Jessica Murray        Clarified help to show that llh 
 %                                       is a column vector
-%
+%   Aug 12, 2023  Nicolas Castro        Updated WGS84 excentricity value,
+%                                       improved variable naming, code
+%                                       readability and handling of special
+%                                       cases to avoid numerical issues.
+%                                       Improved computation of the reduced
+%                                       and prime vertical radii of curvature 
+%                                       by using the average latitude and its 
+%                                       sine/cosine values.
 %
 %-------------------------------------------------------------
 
-%Set ellipsoid constants (WGS84)
+% Set ellipsoid constants (WGS84)
+a = 6378137.0; % semi-major axis
+e = 0.0818191908426; % eccentricity
 
-   a=6378137.0;
-   e=0.08209443794970;
+% Convert to radians
+llh = llh * pi / 180;
+origin = origin * pi / 180;
 
-%Convert to radians
+% Calculate differences in longitudes and latitudes
+dlat = llh(2, :) - origin(2);
+dlon = llh(1, :) - origin(1);
 
-   llh=llh*pi/180;
-   origin=origin*pi/180;
+% Ensure longitude differences are within [-180, 180]
+dlon = mod(dlon + pi, 2*pi) - pi;
 
-%Do the projection
+% Handle special case of latitude = 0
+z = abs(llh(2, :)) > 1e-10; % Use a small tolerance for latitude comparison
+dlat(~z) = 0; % Set latitude difference to zero for points at the equator
 
-   z=llh(2,:)~=0;
+% Compute reduced latitudes and their sines and cosines
+lat_avg = (llh(2, :) + origin(2)) / 2;
+lat_avg_sin = sin(lat_avg);
+lat_avg_cos = cos(lat_avg);
 
-   dlambda=llh(1,z)-origin(1);
+% Compute the meridian radius of curvature
+M = a * (1 - e^2) ./ (sqrt(1 - e^2 * lat_avg_sin.^2)).^3;
 
-   M=a*((1-e^2/4-3*e^4/64-5*e^6/256)*llh(2,z) - ...
-        (3*e^2/8+3*e^4/32+45*e^6/1024)*sin(2*llh(2,z)) + ...
-        (15*e^4/256 +45*e^6/1024)*sin(4*llh(2,z)) - ...
-        (35*e^6/3072)*sin(6*llh(2,z)));
+% Compute the prime vertical radius of curvature
+N = a ./ sqrt(1 - e^2 * lat_avg_sin.^2);
 
-   M0=a*((1-e^2/4-3*e^4/64-5*e^6/256)*origin(2) - ...
-        (3*e^2/8+3*e^4/32+45*e^6/1024)*sin(2*origin(2)) + ...
-        (15*e^4/256 +45*e^6/1024)*sin(4*origin(2)) - ...
-        (35*e^6/3072)*sin(6*origin(2)));
-   
-   N=a./sqrt(1-e^2*sin(llh(2,z)).^2);
-   E=dlambda.*sin(llh(2,z));
+% Compute local coordinates
+xy = zeros(2, size(llh, 2));
+xy(1, :) = dlon .* N .* lat_avg_cos;
+xy(2, :) = dlat .* M;
 
-   xy(1,z)=N.*cot(llh(2,z)).*sin(E);
-   xy(2,z)=M-M0+N.*cot(llh(2,z)).*(1-cos(E));
-
-%Handle special case of latitude = 0
-
-   xy(1,~z)=a*dlambda(~z);
-   xy(2,~z)=-M0;
-
-%Convert to km
-   
-   xy=xy/1000;
+% Convert to km
+xy = xy / 1000;
+end
